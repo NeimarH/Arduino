@@ -58,7 +58,6 @@ object Form48: TForm48
     Top = 24
   end
   object MySensorSerialGateway1: TMySensorSerialGateway
-    usarFila = True
     OnEventoRecebido = MySensorSerialGateway1EventoRecebido
     Porta = 'COM6'
     PortaConfig = 'BAUD=115200 DATA=8 PARITY=N STOP=1,5 HANDSHAKE=RTS/CTS'

@@ -2,12 +2,10 @@ unit MySensorsClass;
 
 interface
 
-
 uses
   System.SysUtils, System.Classes, synaser, MySensors, ACBrBase;
 
 type
-
   TMySensorsGateway = (sgNone, sgSerial, sgEthernet);
 
   TMySensorsGatewayClass = class;
@@ -16,17 +14,26 @@ type
     of object;
 
   TMySensorsSensor = class(TObject)
-    sensor_id: integer;
-    presentation_id: integer;
+  private
+    Fsensor_id: integer;
+    FAttribute: TMySensorsMsg;
+    procedure Setsensor_id(const Value: integer);
+    procedure SetPayload(const Value: string);
+    procedure SetAttribute(const Value: TMySensorsMsg);
+    function GetPayload: string;
+  public
+    property sensor_id: integer read Fsensor_id write Setsensor_id;
+    property Attribute: TMySensorsMsg read FAttribute write SetAttribute;
+    property Payload : string read GetPayload write SetPayload;
   end;
 
-  TThreadListHelper = class(TThreadList)
+  TThreadListHelper<T: class> = class(TThreadList)
   public
     function count: integer;
     procedure delete(idx: integer);
   end;
 
-  TMySensorsSensors = class(TThreadListHelper)
+  TMySensorsSensors = class(TThreadListHelper<TMySensorsSensor>)
   private
     function GetItems(idx: integer): TMySensorsSensor;
     procedure SetItems(idx: integer; const Value: TMySensorsSensor);
@@ -37,24 +44,35 @@ type
 
   end;
 
-  TMySensorsNode = class(TObject)
-    Node_id: integer;
-    timeStamp: TDatetime;
-    UltimaMsg: TMySensorsMsg;
-    Sensors: TMySensorsSensors;
+  TMySensorsNode = class(TComponent)
+  private
+    FNode_id: integer;
+    FtimeStamp: TDatetime;
+    FSensors: TMySensorsSensors;
+    FUltimaMsg: TMySensorsMsg;
+    procedure SetNode_id(const Value: integer);
+    procedure SetSensors(const Value: TMySensorsSensors);
+    procedure SettimeStamp(const Value: TDatetime);
+    procedure SetUltimaMsg(const Value: TMySensorsMsg);
+
   public
     NivelBateria: string;
     Repetidor: Boolean;
     RepetidorVersao: string;
     modulo_nome: string;
     modulo_versao: string;
-    constructor create;
+    constructor create(AOwnder: TComponent);
     destructor destroy; override;
     function FindSensor(sensor_id: integer): TMySensorsSensor;
     function AddSensor(sensor_id: integer): TMySensorsSensor;
+    property Node_id: integer read FNode_id write SetNode_id;
+    property timeStamp: TDatetime read FtimeStamp write SettimeStamp;
+    property UltimaMsg: TMySensorsMsg read FUltimaMsg write SetUltimaMsg;
+    property Sensors: TMySensorsSensors read FSensors write SetSensors;
+
   end;
 
-  TMySensorsNodes = class(TThreadListHelper)
+  TMySensorsNodes = class(TThreadListHelper<TMySensorsNode>)
   private
     function GetItems(idx: integer): TMySensorsNode;
     procedure SetItems(idx: integer; const Value: TMySensorsNode);
@@ -63,18 +81,18 @@ type
     function Find(Node_id, sensor_id: integer): TMySensorsSensor; overload;
     function Find(Node_id: integer): TMySensorsNode; overload;
     property Items[idx: integer]: TMySensorsNode read GetItems write SetItems;
-    function AddNode(Node_id: integer): TMySensorsNode;
+    function AddNode(AOwner: TComponent; Node_id: integer): TMySensorsNode;
   end;
 
   TMySensors = class(TComponent)
   private
-    FAtivo:boolean;
+    FAtivo: Boolean;
     FGateway: TMySensorsGatewayClass;
     FModelo: TMySensorsGateway;
     procedure SetModelo(const Value: TMySensorsGateway);
     function GetAtivo: Boolean;
     procedure SetAtivo(const Value: Boolean);
-    procedure SetGateway(const Value: TMySensorsGatewayClass);virtual;
+    procedure SetGateway(const Value: TMySensorsGatewayClass); virtual;
   protected
     procedure Notification(AComponent: TComponent;
       Operation: TOperation); override;
@@ -90,6 +108,19 @@ type
 
   end;
 
+  TMySendsosAcceptIDEvent = procedure(sender: TObject; ANodeID: integer;
+    var AAccept: Boolean) of object;
+  TMySendsosAcceptSensorIDEvent = procedure(sender: TObject;
+    ANodeID, ASensorID: integer; var AAccept: Boolean) of object;
+  TMySensorsAddSensorEvent = procedure(sender: TObject; ANode: TMySensorsNode;
+    Asensor: TMySensorsSensor) of object;
+  TMySensorsAddNodeEvent = procedure(sender: TObject; ANode: TMySensorsNode)
+    of object;
+  TMySensorsOLogEvento = procedure(sender: TObject; const ATexto: string;
+    var AContinuar: Boolean) of object;
+  TMySensorsPayloadChanged = procedure(sender: TObject;
+    Asensor: TMySensorsSensor) of object;
+
   TMySensorsGatewayClass = class(TComponent)
   private
     FLock: TObject;
@@ -100,10 +131,20 @@ type
     FPortaConfig: string;
     FOnEventoRecebido: TMySensorsMessageEvent;
     FOnInternalEvento: TMySensorsMessageEvent;
-    FOnDataEvento: TMySensorsMessageEvent;
+    FOnReqEvento: TMySensorsMessageEvent;
     FOnPresentationEvento: TMySensorsMessageEvent;
     FOnNodeSensorEvento: TMySensorsMessageEvent;
     FOnStreamEvento: TMySensorsMessageEvent;
+    FOnAddSensorEvent: TMySensorsAddSensorEvent;
+    FOnAddNodeEvent: TMySensorsAddNodeEvent;
+    FOnBeforeAddNode: TMySendsosAcceptIDEvent;
+    FOnBeforeAddSensorEvent: TMySendsosAcceptSensorIDEvent;
+    FOnTextoEvento: TMySensorsOLogEvento;
+    FOnSetEvento: TMySensorsMessageEvent;
+    FOnEventoEnviado: TMySensorsMessageEvent;
+    FOnPayloadChanged: TMySensorsPayloadChanged;
+    FInclusaoDeModulos: Boolean;
+    FOnInclusaoModoAlterado: TNotifyEvent;
     procedure SetusarFila(const Value: Boolean);
     procedure SetPorta(const Value: string); virtual;
     function GetPorta: string; virtual;
@@ -111,12 +152,22 @@ type
     procedure SetPortaConfig(const Value: string); virtual;
     procedure SetOnEventoRecebido(const Value: TMySensorsMessageEvent);
     procedure SetOnInternalEvento(const Value: TMySensorsMessageEvent);
-    procedure SetOnDataEvento(const Value: TMySensorsMessageEvent);
+    procedure SetOnReqEvento(const Value: TMySensorsMessageEvent);
     procedure SetOnPresentationEvento(const Value: TMySensorsMessageEvent);
     procedure SetOnNodeSensorEvento(const Value: TMySensorsMessageEvent);
     procedure SetOnStreamEvento(const Value: TMySensorsMessageEvent);
-    procedure GetNodes(const Value: TMySensorsNodes);
-
+    function GetNodes:TMySensorsNodes;
+    procedure SetOnAddSensorEvent(const Value: TMySensorsAddSensorEvent);
+    procedure SetOnAddNodeEvent(const Value: TMySensorsAddNodeEvent);
+    procedure SetOnBeforeAddNode(const Value: TMySendsosAcceptIDEvent);
+    procedure SetOnBeforeAddSensorEvent(const Value
+      : TMySendsosAcceptSensorIDEvent);
+    procedure SetOnTextoEvento(const Value: TMySensorsOLogEvento);
+    procedure SetOnSetEvento(const Value: TMySensorsMessageEvent);
+    procedure SetOnEventoEnviado(const Value: TMySensorsMessageEvent);
+    procedure SetOnPayloadChanged(const Value: TMySensorsPayloadChanged);
+    procedure SetInclusaoDeModulos(const Value: Boolean);
+    procedure SetOnInclusaoModoAlterado(const Value: TNotifyEvent);
   protected
     FEntrouInclusaoModulos: TDatetime;
     FNodes: TMySensorsNodes;
@@ -137,18 +188,21 @@ type
     procedure Sincronizar(const AProc: TProc);
 
   public
-    emInclusaoDeModulos: Boolean;
+
+    property InclusaoDeModulos: Boolean read FInclusaoDeModulos write SetInclusaoDeModulos;
     property Porta: string read GetPorta write SetPorta;
     property PortaConfig: string read GetPortaConfig write SetPortaConfig;
     function GetModelo: TMySensorsGateway; virtual;
     function WriteString(cmd: string): Boolean; virtual;
     function RegisterNode(Node_id: integer): TMySensorsNode;
-    procedure RegisterSensor(Node_id, sensor_id: integer);
-    property Nodes: TMySensorsNodes write GetNodes;
-    procedure SendRebootSensores(selfID: integer);
-    procedure sendRebootMessage(att: TMySensorsMsg);
-    procedure sendConfig(att: TMySensorsMsg);
-    procedure sendTime(destination, sensor: integer);
+    function RegisterSensor(Node_id, sensor_id: integer): TMySensorsSensor;
+    property Nodes: TMySensorsNodes read GetNodes;
+    procedure EnviarCMD(att: TMySensorsMsg);
+    procedure EnviarReiniciarSensores(selfID: integer);
+    procedure EnviarReiniciarMemsagem(att: TMySensorsMsg);
+    procedure EnviarMetric(att: TMySensorsMsg);
+    procedure EnviarHora(destination, sensor: integer);
+    procedure PerguntarPinNumero(node:TMySensorsNode);
 
     procedure LoadConfig(sIniFile: string); virtual;
     constructor create(ow: TComponent); override;
@@ -165,21 +219,45 @@ type
 
   published
     Property Modelo: TMySensorsGateway read GetModelo;
-    property OnLeEvento: TNotifyEvent read FOnLeEvento write SetOnLeEvento;
-    property OnLeFila: TNotifyEvent read FOnLeFila write SetOnLeFila;
-    property usarFila: Boolean read FusarFila write SetusarFila;
+    // property OnLeEvento: TNotifyEvent read FOnLeEvento write SetOnLeEvento;
+    // property OnLeFila: TNotifyEvent read FOnLeFila write SetOnLeFila;
+    // property usarFila: Boolean read FusarFila write SetusarFila;
+
+    property OnLogEvento: TMySensorsOLogEvento read FOnTextoEvento
+      write SetOnTextoEvento;
+
     property OnEventoRecebido: TMySensorsMessageEvent read FOnEventoRecebido
       write SetOnEventoRecebido;
-    property OnInternalEvento: TMySensorsMessageEvent read FOnInternalEvento
-      write SetOnInternalEvento;
-    property OnDataEvento: TMySensorsMessageEvent read FOnDataEvento
-      write SetOnDataEvento;
+    property OnEventoEnviado: TMySensorsMessageEvent read FOnEventoEnviado
+      write SetOnEventoEnviado;
+
     property OnPresentationEvento: TMySensorsMessageEvent
       read FOnPresentationEvento write SetOnPresentationEvento;
+    property OnInternalEvento: TMySensorsMessageEvent read FOnInternalEvento
+      write SetOnInternalEvento;
+    property OnSetEvento: TMySensorsMessageEvent read FOnSetEvento
+      write SetOnSetEvento;
+    property OnReqEvento: TMySensorsMessageEvent read FOnReqEvento
+      write SetOnReqEvento;
     property OnStreamEvento: TMySensorsMessageEvent read FOnStreamEvento
       write SetOnStreamEvento;
+
     property OnNodeSensorEvento: TMySensorsMessageEvent read FOnNodeSensorEvento
       write SetOnNodeSensorEvento;
+
+    property OnAfterAddSensorEvento: TMySensorsAddSensorEvent
+      read FOnAddSensorEvent write SetOnAddSensorEvent;
+    property OnAfterAddNodeEvento: TMySensorsAddNodeEvent read FOnAddNodeEvent
+      write SetOnAddNodeEvent;
+    property OnBeforeAddNodeEvento: TMySendsosAcceptIDEvent
+      read FOnBeforeAddNode write SetOnBeforeAddNode;
+    property OnBeforeAddSensorEvento: TMySendsosAcceptSensorIDEvent
+      read FOnBeforeAddSensorEvent write SetOnBeforeAddSensorEvent;
+
+    property OnPayloadChanged: TMySensorsPayloadChanged read FOnPayloadChanged
+      write SetOnPayloadChanged;
+
+    property OnInclusaoModoAlterado:TNotifyEvent read FOnInclusaoModoAlterado write SetOnInclusaoModoAlterado;
 
   end;
 
@@ -238,8 +316,11 @@ type
 
 Procedure Register;
 
-//var
-//  SensorSerialGateway: TMySensorSerialGateway;
+// var
+// SensorSerialGateway: TMySensorSerialGateway;
+
+var
+  MySensorsSaveRepeatedValue: array [0 .. 46] of Boolean;
 
 implementation
 
@@ -256,7 +337,8 @@ var
 
 Procedure Register;
 begin
-  RegisterComponents('Sensors', [TMySensors,TMySensorSerialGateway, TMySensorEthernetGateway]);
+  RegisterComponents('Sensors', [TMySensors, TMySensorSerialGateway,
+    TMySensorEthernetGateway]);
 end;
 
 function Now: TDatetime;
@@ -272,16 +354,17 @@ begin // torna Now  ThreadSafe
   end;
 end;
 
-procedure TMySensorsGatewayClass.sendRebootMessage(att: TMySensorsMsg);
-var
-  cmd: string;
+procedure TMySensorsGatewayClass.EnviarReiniciarMemsagem(att: TMySensorsMsg);
 begin
-  cmd := EncodeMySensorMsg(att.Node_id, NODE_SENSOR_ID, C_INTERNAL, 1,
-    I_REBOOT, '1');
-  WriteString(cmd);
+  att.TxRx := txCommand;
+  att.command := C_INTERNAL;
+  att.sub_type := I_REBOOT;
+  att.Payload := '1';
+  att.ack := 1;
+  EnviarCMD(att);
 end;
 
-procedure TMySensorsGatewayClass.SendRebootSensores(selfID: integer);
+procedure TMySensorsGatewayClass.EnviarReiniciarSensores(selfID: integer);
 begin
   TTask.run(
     procedure
@@ -299,22 +382,25 @@ begin
           att.command := C_INTERNAL;
           att.sub_type := I_REBOOT;
           att.ack := 1;
-          att.payload := '1';
-          msg := EncodeMySensorMsg(att);
-          WriteString(msg);
+          att.Payload := '1';
+          att.TxRx := txCommand;
+          EnviarCMD(att);
           sleep(200);
         end;
       end;
     end);
 end;
 
-procedure TMySensorsGatewayClass.sendConfig(att: TMySensorsMsg);
+procedure TMySensorsGatewayClass.EnviarMetric(att: TMySensorsMsg);
 var
   cmd: string;
 begin
-  cmd := EncodeMySensorMsg(att.Node_id, NODE_SENSOR_ID, C_INTERNAL, 0, I_CONFIG,
-    'M'); // M-Metric
-  WriteString(cmd);
+  att.TxRx := txCommand;
+  att.ack := 0;
+  att.command := C_INTERNAL;
+  att.sub_type := I_CONFIG;
+  att.Payload := 'M';
+  EnviarCMD(att);
 end;
 
 procedure TMySensorsGatewayClass.sendIdRequest(att: TMySensorsMsg);
@@ -326,18 +412,26 @@ begin
   inc(id);
   cmd := EncodeMySensorMsg(BROADCAST_ADDRESS, NODE_SENSOR_ID, C_INTERNAL, 0,
     I_ID_RESPONSE, IntToStr(id));
-  FNodes.AddNode(id);
+  FNodes.AddNode(self, id);
 
   WriteString(cmd);
+  if assigned(FOnEventoEnviado) then
+    FOnEventoEnviado(self, att);
+
 end;
 
-procedure TMySensorsGatewayClass.sendTime(destination, sensor: integer);
+procedure TMySensorsGatewayClass.EnviarHora(destination, sensor: integer);
 var
   cmd: string;
+  att: TMySensorsMsg;
 begin
-  cmd := EncodeMySensorMsg(destination, sensor, C_INTERNAL, 0, I_TIME,
-    FormatDateTime('hh:mm:ss', Now));
-  WriteString(cmd);
+  att.Node_id := destination;
+  att.sensor_id := sensor;
+  att.command := C_INTERNAL;
+  att.ack := 0;
+  att.sub_type := I_TIME;
+  att.Payload := FormatDateTime('hh:mm:ss', Now);
+  EnviarCMD(att);
 end;
 
 procedure TMySensorsGatewayClass.AddFila(sTexto: string);
@@ -345,95 +439,137 @@ var
   att: TMySensorsMsg;
   node: TMySensorsNode;
   sensor: TMySensorsSensor;
+  continuar: Boolean;
+  oldPayload:string;
 begin
-  if FusarFila then
-  begin
-    if FFila.count > 1000 then
-      FFila.delete(0);
-    FFila.Add(sTexto);
-  end;
-  att := DecodeMySensorMsg(sTexto);
 
-  if assigned(FOnEventoRecebido) then
-    FOnEventoRecebido(self, att);
-
-  node := FNodes.Find(att.Node_id);
-  if emInclusaoDeModulos and (not assigned(node)) then
-  begin
-    if Now > FEntrouInclusaoModulos + strToTime('00:01:00') then
-      emInclusaoDeModulos := false;
-    if emInclusaoDeModulos then
-      node := RegisterNode(att.Node_id);
-  end;
-  if not assigned(node) then
-    exit; // modulo não registrado
-
-  sensor := node.FindSensor(att.sensor_id);
-  if not assigned(sensor) then
-  begin
-    RegisterSensor(att.Node_id, att.sensor_id);
-  end;
-
-  case att.internal_sub_type of
-    I_SKETCH_NAME:
-      node.modulo_nome := att.payload;
-    I_SKETCH_VERSION:
-      node.modulo_versao := att.payload;
-
-    I_REBOOT:
+  TMonitor.Enter(FLock);
+  try
+    TThread.Synchronize(TThread.Current,
+      procedure
       begin
-        sendRebootMessage(att);
-        exit;
-      end;
-    I_BATTERY_LEVEL:
-      begin
-        SaveBatteryLevel(att);
-        exit;
-      end;
-    I_ID_REQUEST:
-      begin
-        sendIdRequest(att);
-        exit;
-      end;
-    I_CONFIG:
-      sendConfig(att);
-    // I_GATEWAY_READY:
-    // SendRebootSensores(att.Node_id);
-  end;
+        continuar := true;
+        if assigned(FOnTextoEvento) then
+          FOnTextoEvento(self, sTexto, continuar);
+        if not continuar then
+          exit;
 
-  case att.presentation_sub_type of
-    S_ARDUINO_REPEATER_NODE:
-      begin
-        node := FNodes.Find(att.Node_id);
-        if assigned(node) then
+        if FusarFila then
         begin
-          node.Repetidor := true;
-          node.RepetidorVersao := att.payload;
+          if FFila.count > 1000 then
+            FFila.delete(0);
+          FFila.Add(sTexto);
         end;
-        exit;
-      end;
+
+        att := DecodeMySensorMsg(sTexto);
+        att.TxRx := rxCommand;
+
+        if assigned(FOnEventoRecebido) then
+          FOnEventoRecebido(self, att);
+
+        node := FNodes.Find(att.Node_id);
+        if FInclusaoDeModulos and (not assigned(node)) then
+        begin
+          if Now > FEntrouInclusaoModulos + strToTime('00:02:00') then
+            InclusaoDeModulos := false;
+          if FInclusaoDeModulos then
+            node := RegisterNode(att.Node_id);
+        end;
+        if not assigned(node) then
+          exit; // modulo não registrado
+
+        sensor := node.FindSensor(att.sensor_id);
+        if not assigned(sensor) then
+        begin
+          sensor := RegisterSensor(att.Node_id, att.sensor_id);
+          if sensor = nil then
+            exit;
+        end;
+
+        oldPayload := sensor.payload;
+        sensor.Attribute := att;
+
+        case att.internal_sub_type of
+          I_SKETCH_NAME:
+            node.modulo_nome := att.Payload;
+          I_SKETCH_VERSION:
+            node.modulo_versao := att.Payload;
+
+          I_REBOOT:
+            begin
+              EnviarReiniciarMemsagem(att);
+              exit;
+            end;
+          I_BATTERY_LEVEL:
+            begin
+              SaveBatteryLevel(att);
+              exit;
+            end;
+          I_ID_REQUEST:
+            begin
+              sendIdRequest(att);
+              exit;
+            end;
+          I_CONFIG:
+            EnviarMetric(att);
+          // I_GATEWAY_READY:
+          // SendRebootSensores(att.Node_id);
+        end;
+
+        case att.presentation_sub_type of
+          S_ARDUINO_REPEATER_NODE:
+            begin
+              node := FNodes.Find(att.Node_id);
+              if assigned(node) then
+              begin
+                node.Repetidor := true;
+                node.RepetidorVersao := att.Payload;
+              end;
+              exit;
+            end;
+        end;
+
+        case att.command of
+          C_PRESENTATION:
+            if assigned(FOnPresentationEvento) then
+              FOnPresentationEvento(self, att);
+
+          C_SET:
+            if assigned(FOnSetEvento) then
+              FOnSetEvento(self, att);
+          C_REQ:
+            if assigned(FOnReqEvento) then
+              FOnReqEvento(self, att);
+          C_INTERNAL:
+            if assigned(FOnInternalEvento) then
+              FOnInternalEvento(self, att);
+          C_STREAM:
+            if assigned(FOnStreamEvento) then
+              FOnStreamEvento(self, att);
+
+        end;
+
+        if att.Node_id = NODE_SENSOR_ID then
+          if assigned(FOnNodeSensorEvento) then
+            FOnNodeSensorEvento(self, att);
+
+        if assigned(sensor) then
+        begin
+          if (att.command = C_SET) and assigned(FOnPayloadChanged) and
+            ((MySensorsSaveRepeatedValue[att.sub_type]) or
+            (att.Payload <> oldPayload)) then
+          begin
+            sensor.Attribute := att;
+            FOnPayloadChanged(self, sensor);
+          end
+          else
+            sensor.Attribute := att;
+        end;
+
+      end);
+  finally
+    TMonitor.exit(FLock);
   end;
-
-  if att.internal_sub_type > COMMAND_NONE then
-    if assigned(FOnInternalEvento) then
-      FOnInternalEvento(self, att);
-
-  if att.data_sub_type > COMMAND_NONE then
-    if assigned(FOnDataEvento) then
-      FOnDataEvento(self, att);
-
-  if att.presentation_sub_type > COMMAND_NONE then
-    if assigned(FOnPresentationEvento) then
-      FOnPresentationEvento(self, att);
-
-  if att.stream_sub_type > COMMAND_NONE then
-    if assigned(FOnStreamEvento) then
-      FOnStreamEvento(self, att);
-
-  if att.Node_id = NODE_SENSOR_ID then
-    if assigned(FOnNodeSensorEvento) then
-      FOnNodeSensorEvento(self, att);
-
 end;
 
 procedure TMySensorsGatewayClass.ApagarFila;
@@ -488,7 +624,7 @@ begin
   inherited;
   FLock := TObject.create;
   FEntrouInclusaoModulos := Now;
-  emInclusaoDeModulos := true;
+  FInclusaoDeModulos := true;
   FNodes := TMySensorsNodes.create;
   FFila := TStringList.create;
   FusarFila := true;
@@ -540,9 +676,9 @@ begin
   result := sgNone;
 end;
 
-procedure TMySensorsGatewayClass.GetNodes(const Value: TMySensorsNodes);
+function TMySensorsGatewayClass.GetNodes:TMySensorsNodes;
 begin
-
+  result :=FNodes;
 end;
 
 function TMySensorsGatewayClass.GetPorta: string;
@@ -687,6 +823,7 @@ end;
 
 function TMySensorSerialGateway.WriteString(cmd: string): Boolean;
 begin
+  inherited WriteString(cmd);
   Lock;
   try
     Serial.SendString(cmd);
@@ -726,8 +863,14 @@ begin
 end;
 
 function TMySensorsGatewayClass.WriteString(cmd: string): Boolean;
+var
+  continuar: Boolean;
 begin
-
+  continuar := true;
+  if assigned(FOnTextoEvento) then
+    FOnTextoEvento(self, cmd, continuar);
+  if not continuar then
+    abort;
 end;
 
 function TMySensorSerialGateway.DeviceToString(OnlyException: Boolean): String;
@@ -807,16 +950,62 @@ begin
   fsTimer.Enabled := old;
 end;
 
-procedure TMySensorsGatewayClass.SetOnDataEvento(const Value
+procedure TMySensorsGatewayClass.SetInclusaoDeModulos(const Value: Boolean);
+begin
+  if FInclusaoDeModulos = Value then exit;
+  FInclusaoDeModulos := Value;
+  if value then
+     FEntrouInclusaoModulos := now;
+  if assigned(FOnInclusaoModoAlterado) then
+     OnInclusaoModoAlterado(self);
+end;
+
+procedure TMySensorsGatewayClass.SetOnAddNodeEvent
+  (const Value: TMySensorsAddNodeEvent);
+begin
+  FOnAddNodeEvent := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnAddSensorEvent
+  (const Value: TMySensorsAddSensorEvent);
+begin
+  FOnAddSensorEvent := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnBeforeAddNode
+  (const Value: TMySendsosAcceptIDEvent);
+begin
+  FOnBeforeAddNode := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnBeforeAddSensorEvent
+  (const Value: TMySendsosAcceptSensorIDEvent);
+begin
+  FOnBeforeAddSensorEvent := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnReqEvento(const Value
   : TMySensorsMessageEvent);
 begin
-  FOnDataEvento := Value;
+  FOnReqEvento := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnEventoEnviado
+  (const Value: TMySensorsMessageEvent);
+begin
+  FOnEventoEnviado := Value;
 end;
 
 procedure TMySensorsGatewayClass.SetOnEventoRecebido
   (const Value: TMySensorsMessageEvent);
 begin
   FOnEventoRecebido := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnInclusaoModoAlterado(
+  const Value: TNotifyEvent);
+begin
+  FOnInclusaoModoAlterado := Value;
 end;
 
 procedure TMySensorsGatewayClass.SetOnInternalEvento
@@ -841,16 +1030,34 @@ begin
   FOnNodeSensorEvento := Value;
 end;
 
+procedure TMySensorsGatewayClass.SetOnPayloadChanged
+  (const Value: TMySensorsPayloadChanged);
+begin
+  FOnPayloadChanged := Value;
+end;
+
 procedure TMySensorsGatewayClass.SetOnPresentationEvento
   (const Value: TMySensorsMessageEvent);
 begin
   FOnPresentationEvento := Value;
 end;
 
+procedure TMySensorsGatewayClass.SetOnSetEvento(const Value
+  : TMySensorsMessageEvent);
+begin
+  FOnSetEvento := Value;
+end;
+
 procedure TMySensorsGatewayClass.SetOnStreamEvento
   (const Value: TMySensorsMessageEvent);
 begin
   FOnStreamEvento := Value;
+end;
+
+procedure TMySensorsGatewayClass.SetOnTextoEvento
+  (const Value: TMySensorsOLogEvento);
+begin
+  FOnTextoEvento := Value;
 end;
 
 procedure TMySensorsGatewayClass.SetPorta(const Value: string);
@@ -952,24 +1159,63 @@ begin
   System.TMonitor.Enter(FLock);
 end;
 
-function TMySensorsGatewayClass.RegisterNode(Node_id: integer): TMySensorsNode;
+procedure TMySensorsGatewayClass.PerguntarPinNumero(node: TMySensorsNode);
+var att:TMySensorsMsg;
+    i:integer;
 begin
+    att.node_id := node.Node_id;
+    att.command := C_REQ;
+    att.sub_type  := V_LIGHT_LEVEL;
+    att.TxRx := txCommand;
+    att.payload := '1';
+    att.ack := 0;
+    for I := 0 to node.Sensors.count-1 do
+     if node.Sensors.Items[i].sensor_id<255 then
+      begin  // pede o numero de pinagem de todos os sensores no node;
+       att.sensor_id := node.Sensors.Items[i].sensor_id;
+       EnviarCMD(att);
+      end;
+end;
+
+function TMySensorsGatewayClass.RegisterNode(Node_id: integer): TMySensorsNode;
+var
+  continua: Boolean;
+begin
+  result := nil;
+  continua := true;
+  if assigned(FOnBeforeAddNode) then
+    FOnBeforeAddNode(self, Node_id, continua);
+  if not continua then
+    exit;
   result := FNodes.Find(Node_id);
   if assigned(result) then
     exit;
-  result := FNodes.AddNode(Node_id);
+  result := FNodes.AddNode(self, Node_id);
+  if assigned(FOnAddNodeEvent) then
+    FOnAddNodeEvent(self, result);
 end;
 
-procedure TMySensorsGatewayClass.RegisterSensor(Node_id, sensor_id: integer);
+function TMySensorsGatewayClass.RegisterSensor(Node_id, sensor_id: integer)
+  : TMySensorsSensor;
 var
   node: TMySensorsNode;
+  continua: Boolean;
 begin
+  result := nil;
+  continua := true;
+  if assigned(FOnBeforeAddSensorEvent) then
+    FOnBeforeAddSensorEvent(self, Node_id, sensor_id, continua);
+  if not continua then
+    exit;
+
   node := FNodes.Find(Node_id);
   if not assigned(node) then
   begin
     raise exception.create('Node não existe');
   end;
-  node.AddSensor(sensor_id);
+  result := node.AddSensor(sensor_id);
+  if assigned(FOnAddSensorEvent) then
+    FOnAddSensorEvent(self, node, result);
 end;
 
 procedure TMySensorsGatewayClass.SaveBatteryLevel(att: TMySensorsMsg);
@@ -978,14 +1224,24 @@ var
 begin
   node := FNodes.Find(att.Node_id);
   if assigned(node) then
-    node.NivelBateria := att.payload;
+    node.NivelBateria := att.Payload;
+end;
+
+procedure TMySensorsGatewayClass.EnviarCMD(att: TMySensorsMsg);
+var
+  msg: string;
+begin
+  msg := EncodeMySensorMsg(att);
+  WriteString(msg);
+  if assigned(FOnEventoEnviado) then
+    FOnEventoEnviado(self, att);
 end;
 
 { TMySensors }
 
 function TMySensors.Ativar: Boolean;
 begin
- if assigned(FGateway) then
+  if assigned(FGateway) then
     FGateway.Ativar;
 end;
 
@@ -997,8 +1253,8 @@ end;
 
 procedure TMySensors.Desativar;
 begin
- if assigned(FGateway) then
-  FGateway.Desativar;
+  if assigned(FGateway) then
+    FGateway.Desativar;
 end;
 
 destructor TMySensors.destroy;
@@ -1008,25 +1264,25 @@ end;
 
 function TMySensors.GetAtivo: Boolean;
 begin
- result := FAtivo;
- if assigned(FGateway) then
+  result := FAtivo;
+  if assigned(FGateway) then
     result := FGateway.Ativo;
 end;
 
 procedure TMySensors.Notification(AComponent: TComponent;
-  Operation: TOperation);
+Operation: TOperation);
 begin
   inherited;
-  if (Operation = opRemove)  then
+  if (Operation = opRemove) then
     if FGateway = AComponent then
-       FGateway := nil;
+      FGateway := nil;
 
 end;
 
 procedure TMySensors.SetAtivo(const Value: Boolean);
 begin
- FAtivo := Value;
- if assigned(FGateway) then
+  FAtivo := Value;
+  if assigned(FGateway) then
     FGateway.FAtivo := true;
 
 end;
@@ -1035,36 +1291,37 @@ procedure TMySensors.SetGateway(const Value: TMySensorsGatewayClass);
 begin
   FGateway := Value;
   if assigned(FGateway) then
-     SetModelo( FGateway.GetModelo  );
+    SetModelo(FGateway.GetModelo);
 end;
 
 procedure TMySensors.SetModelo(const Value: TMySensorsGateway);
 begin
-{  if assigned(FGateway) then
+  { if assigned(FGateway) then
     FGateway.free;
-  case Value of
+    case Value of
     sgSerial:
-      FGateway := TSensorSerialGateway.create(self);
+    FGateway := TSensorSerialGateway.create(self);
     sgEthernet:
-      FGateway := TSensorEthernetGateway.create(self);
-  else
+    FGateway := TSensorEthernetGateway.create(self);
+    else
     FGateway := TMySensorsGatewayClass.create(self);
-  end;
-  FGateway.Name := 'MyGateway1';
+    end;
+    FGateway.Name := 'MyGateway1';
   }
   FModelo := Value;
   if assigned(FGateway) then
-     FGateway.LoadConfig('');
+    FGateway.LoadConfig('');
 end;
 
 { TMySensorsNodes<TMySensorsNode> }
 
-function TMySensorsNodes.AddNode(Node_id: integer): TMySensorsNode;
+function TMySensorsNodes.AddNode(AOwner: TComponent; Node_id: integer)
+  : TMySensorsNode;
 begin
   result := Find(Node_id);
   if result = nil then
   begin
-    result := TMySensorsNode.create;
+    result := TMySensorsNode.create(AOwner);
     result.Node_id := Node_id;
     result.timeStamp := Now;
     Add(result);
@@ -1141,21 +1398,41 @@ begin
   result := Sensors.AddSensor(sensor_id);
 end;
 
-constructor TMySensorsNode.create;
+constructor TMySensorsNode.create(AOwnder: TComponent);
 begin
   inherited;
-  Sensors := TMySensorsSensors.create;
+  FSensors := TMySensorsSensors.create;
 end;
 
 destructor TMySensorsNode.destroy;
 begin
-  Sensors.free;
+  FSensors.free;
   inherited;
 end;
 
 function TMySensorsNode.FindSensor(sensor_id: integer): TMySensorsSensor;
 begin
-  result := Sensors.Find(sensor_id);
+  result := FSensors.Find(sensor_id);
+end;
+
+procedure TMySensorsNode.SetNode_id(const Value: integer);
+begin
+  FNode_id := Value;
+end;
+
+procedure TMySensorsNode.SetSensors(const Value: TMySensorsSensors);
+begin
+  FSensors := Value;
+end;
+
+procedure TMySensorsNode.SettimeStamp(const Value: TDatetime);
+begin
+  FtimeStamp := Value;
+end;
+
+procedure TMySensorsNode.SetUltimaMsg(const Value: TMySensorsMsg);
+begin
+  FUltimaMsg := Value;
 end;
 
 { TMySensorsSensors }
@@ -1207,7 +1484,7 @@ end;
 
 { TThreadListHelper }
 
-function TThreadListHelper.count: integer;
+function TThreadListHelper<T>.count: integer;
 begin
   try
     result := LockList.count;
@@ -1217,7 +1494,7 @@ begin
 
 end;
 
-procedure TThreadListHelper.delete(idx: integer);
+procedure TThreadListHelper<T>.delete(idx: integer);
 begin
   try
     LockList.delete(idx);
@@ -1239,9 +1516,34 @@ begin
   FIP := Value;
 end;
 
+{ TMySensorsSensor }
+
+function TMySensorsSensor.GetPayload: string;
+begin
+   result := Attribute.payload;
+end;
+
+procedure TMySensorsSensor.SetAttribute(const Value: TMySensorsMsg);
+begin
+  FAttribute := Value;
+end;
+
+procedure TMySensorsSensor.SetPayload(const Value: string);
+begin
+  FAttribute.Payload := Value;
+end;
+
+
+procedure TMySensorsSensor.Setsensor_id(const Value: integer);
+begin
+  Fsensor_id := Value;
+end;
+
 initialization
 
 FLock := TCriticalSection.create;
+
+FillChar(MySensorsSaveRepeatedValue, sizeof(MySensorsSaveRepeatedValue), false);
 
 finalization
 
